@@ -37,7 +37,13 @@ const validateBearerToken = (
   req: Request,
   expectedToken: string | undefined,
 ): boolean => {
-  if (!expectedToken) return true
+  if (!expectedToken) {
+    console.log(
+      'No expected token configured, authentication disabled but should be required',
+    )
+    return false
+  }
+
   const authHeader = req.headers.authorization
   if (!authHeader) return false
   const [type, token] = authHeader.split(' ')
@@ -117,7 +123,7 @@ export async function stdioToSse(args: StdioToSseArgs) {
   app.get(ssePath, async (req, res) => {
     const expectedToken = headers['Authorization']?.replace('Bearer ', '')
 
-    logger.info('Checking SSE authorization:', {
+    logger.info('Checking SSE authorization in stdioToSse.ts:', {
       ip: req.ip,
       headers: req.headers,
       authHeader: req.headers.authorization,

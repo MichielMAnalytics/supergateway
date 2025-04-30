@@ -1,4 +1,4 @@
-import express from 'express'
+import express, { Request, Response } from 'express'
 import bodyParser from 'body-parser'
 import cors, { type CorsOptions } from 'cors'
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process'
@@ -32,6 +32,17 @@ const setResponseHeaders = ({
   Object.entries(headers).forEach(([key, value]) => {
     res.setHeader(key, value)
   })
+
+const validateBearerToken = (
+  req: Request,
+  expectedToken: string | undefined,
+): boolean => {
+  if (!expectedToken) return true
+  const authHeader = req.headers.authorization
+  if (!authHeader) return false
+  const [type, token] = authHeader.split(' ')
+  return type === 'Bearer' && token === expectedToken
+}
 
 export async function stdioToSse(args: StdioToSseArgs) {
   const {
@@ -104,6 +115,28 @@ export async function stdioToSse(args: StdioToSseArgs) {
   }
 
   app.get(ssePath, async (req, res) => {
+    const expectedToken = headers['Authorization']?.replace('Bearer ', '')
+
+    logger.info('Checking SSE authorization:', {
+      ip: req.ip,
+      headers: req.headers,
+      authHeader: req.headers.authorization,
+      expectedToken: expectedToken ? '[REDACTED]' : 'Not configured',
+    })
+
+    if (!validateBearerToken(req, expectedToken)) {
+      logger.info(`Unauthorized SSE connection attempt from ${req.ip}`)
+      logger.info(
+        'Authorization failed - token mismatch or missing Bearer token',
+      )
+      logger.info(`Received auth header: ${req.headers.authorization}`)
+      logger.info(
+        `Expected token: ${expectedToken ? '[REDACTED]' : 'Not configured'}`,
+      )
+      res.status(401).send('Unauthorized')
+      return
+    }
+
     logger.info(`New SSE connection from ${req.ip}`)
 
     setResponseHeaders({
@@ -142,6 +175,14 @@ export async function stdioToSse(args: StdioToSseArgs) {
 
   // @ts-ignore
   app.post(messagePath, async (req, res) => {
+    const expectedToken = headers['Authorization']?.replace('Bearer ', '')
+
+    if (!validateBearerToken(req, expectedToken)) {
+      logger.info(`Unauthorized message attempt from ${req.ip}`)
+      res.status(401).send('Unauthorized')
+      return
+    }
+
     const sessionId = req.query.sessionId as string
 
     setResponseHeaders({
